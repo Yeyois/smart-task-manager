@@ -1,16 +1,21 @@
+version: '3.8'
+
 services:
-  # השרת שלנו (FastAPI)
-  api:
+  # 1. השרת (FastAPI)
+  backend:  # השם הזה חייב להיות עקבי
     build: ./backend
     ports:
       - "8000:8000"
     volumes:
-      - ./backend:/app  # מאפשר לך לערוך קוד ולראות שינויים מיד (Hot Reload)
+      - ./backend:/app  # מצוין ל-Hot Reload
+      - /app/__pycache__ # מונע בעיות הרשאות עם קבצי קומפילציה
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY} # <--- הנה המיקום הנכון! (בתוך ה-backend)
 
-  # האתר שלנו (React + Nginx)
-  web:
+  # 2. האתר (React + Nginx)
+  frontend:
     build: ./frontend
     ports:
-      - "80:80" # האתר יהיה זמין בכתובת http://localhost בלי פורט
+      - "80:80" # שים לב: האתר יהיה ב-http://localhost
     depends_on:
-      - api # מחכה שה-API יעלה קודם
+      - backend

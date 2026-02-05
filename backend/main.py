@@ -1,10 +1,30 @@
+import os
+import json
+from google import genai
+from google.genai import types
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from sqlalchemy import create_engine, Column, Integer, String, Boolean
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from typing import List, Optional
+from dotenv import load_dotenv
+
+load_dotenv()
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+if not GOOGLE_API_KEY:
+    print("WARNING: GOOGLE_API_KEY not found in .env file. AI feature will fail.")
+
+client = None
+if GOOGLE_API_KEY:
+    try:
+        client = genai.Client(api_key=GOOGLE_API_KEY)
+    except Exception as e:
+        print(f"Error initializing Gemini client: {e}")
+else:
+    print("WARNING: GOOGLE_API_KEY not found. AI features will be disabled.")
+
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///./tasks.db"
 
@@ -19,6 +39,7 @@ class TaskDB(Base):
     title = Column(String, index=True)
     description = Column(String, nullable=True)
     is_completed = Column(Boolean, default=False)
+    parent_id = Column(Integer, ForeignKey("tasks.id"), nullable=True)
 
 
 Base.metadata.create_all(bind=engine)
@@ -30,17 +51,28 @@ class TaskCreate(BaseModel):
 
 class TaskResponse(TaskCreate):
     id: int
+    parent_id: Optional[int] = None
 
     class Config:
         from_attributes = True
+
+class AISubtasksResponse(BaseModel):
+    original_task_id: int
+    suggested_subtasks: List[str]
+
+class BatchTasksCreate(BaseModel):
+    parent_task_id: int
+    subtasks_titles: List[str]
 
 app = FastAPI()
 
 origins = [
     "http://localhost:5173",
     "http://localhost:3000",
+    "http://localhost:80",
     "http://localhost",
-    "http://127.0.0.1"
+    "http://127.0.0.1",
+    "http://127.0.0.1:80",
 ]
 
 app.add_middleware(
@@ -69,8 +101,8 @@ def get_db():
 
 
 @app.post("/tasks/", response_model=TaskResponse)
-def creat_task(task: TaskCreate, db: Session = Depends(get_db)):
-    db_task = TaskDB(title=task.title, description=task.description, is_completed=task.is_completed)
+def create_task(task: TaskCreate, db: Session = Depends(get_db)):
+    db_task = TaskDB(**task.model_dump())
     db.add(db_task)
     db.commit()
     db.refresh(db_task)
@@ -108,11 +140,71 @@ def delete_task(task_id: int, db: Session = Depends(get_db)):
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
     
+    db.query(TaskDB).filter(TaskDB.parent_id == task_id).delete()
+    
     db.delete(task)
     db.commit()
     return {"message": "Task deleted successfully!"}
 
-@app.post("/tasks/{task_id}/generate-subtasks")
-def generate_subtasks(task_id: int):
-    return {"message": "AI functionality blabla.."}
+@app.post("/tasks/batch-create")
+def batch_create_subtasks(payload: BatchTasksCreate, db: Session = Depends(get_db)):
+    parent = db.query(TaskDB).filter(TaskDB.id == payload.parent_task_id).first()
+    if not parent:
+        raise HTTPException(status_code=404, detail="Parent task not found")
+    new_tasks_objects = [
+        TaskDB(
+            title=title,
+            description=f"Subtask of: {payload.parent_task_id}"   ,
+            is_completed=False,
+            parent_id=payload.parent_task_id
+        )
+        for title in payload.subtasks_titles
+    ]
 
+    try:
+        db.add_all(new_tasks_objects)
+        db.commit()
+
+        return {"message": f"successfully created {len(new_tasks_objects)} subtasks", "parent_id": payload.parent_task_id}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Database error {str(e)}")
+
+# agent ai
+@app.post("/tasks/{task_id}/generate-subtasks", response_model=AISubtasksResponse)
+async def generate_subtasks(task_id: int, db: Session = Depends(get_db)):
+    if not client:
+        raise HTTPException(status_code=503, detail="AI functionality is disabled (Missing API Key).")
+
+    task = db.query(TaskDB).filter(TaskDB.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    prompt = f"""
+    You are a task manager assistant.
+    Task: {task.title}
+    Description: {task.description or 'No description'}
+    
+    Break this task down into 3-5 actionable subtasks.
+    Return ONLY a JSON object with this structure:
+    {{
+        "subtasks": ["subtask 1", "subtask 2", "subtask 3"]
+    }}
+    """
+
+    try:
+        response = await client.aio.models.generate_content(
+            model='gemini-flash-latest',
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type='application/json'
+            )
+        )
+        data = json.loads(response.text)
+        subtasks = data.get("subtasks", [])
+
+        return AISubtasksResponse(original_task_id=task_id, suggested_subtasks=subtasks)
+    
+    except Exception as e:
+        print(f"Gemini Error: {e}")
+        raise HTTPException(status_code=503, detail="AI service unavailable.")

@@ -1,7 +1,9 @@
+<img width="926" height="925" alt="image" src="https://github.com/user-attachments/assets/835ff710-6ce5-423f-b3d2-9c7b69ed21b6" />
+
 # 🚀 Smart Task Manager (Full Stack + AI)
 
 A modern, containerized Task Management application built to demonstrate a complete full-stack architecture.
-It features a **FastAPI** backend, a **React** frontend, and an **AI-powered** subtask generator (AI feature is comming soon..).
+It features a **FastAPI** backend, a **React** frontend, and an **AI-powered** subtask generator.
 
 ## 🛠 Tech Stack
 

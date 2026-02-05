@@ -94,9 +94,9 @@ def update_task(task_id: int, task_update: TaskCreate, db: Session = Depends(get
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
     
-    task.title = task_update.title
-    task.description = task_update.description
-    task.is_completed = task_update.is_completed
+    update_data = task_update.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(task, key, value)
 
     db.commit()
     db.refresh(task)
@@ -112,7 +112,7 @@ def delete_task(task_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Task deleted successfully!"}
 
-# @app.post("/tasks/{task_id}/generate-subtasks")
-# def generate_subtasks(task_id: int):
-#     return {"message": "AI functionality blabla.."}
+@app.post("/tasks/{task_id}/generate-subtasks")
+def generate_subtasks(task_id: int):
+    return {"message": "AI functionality blabla.."}
 

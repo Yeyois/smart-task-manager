@@ -24,7 +24,7 @@ It features a **FastAPI** backend, a **React** frontend, and an **AI-powered** s
 
 1. **Clone the repository:**
    ```bash
-   git clone [https://github.com/YOUR_USERNAME/smart-task-manager.git](https://github.com/YOUR_USERNAME/smart-task-manager.git)
+   git clone https://github.com/Yeyois/smart-task-manager.git
    cd smart-task-manager
    ```
 

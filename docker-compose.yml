@@ -1,0 +1,16 @@
+services:
+  # השרת שלנו (FastAPI)
+  api:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app  # מאפשר לך לערוך קוד ולראות שינויים מיד (Hot Reload)
+
+  # האתר שלנו (React + Nginx)
+  web:
+    build: ./frontend
+    ports:
+      - "80:80" # האתר יהיה זמין בכתובת http://localhost בלי פורט
+    depends_on:
+      - api # מחכה שה-API יעלה קודם
